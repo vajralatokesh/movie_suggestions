@@ -1,10 +1,9 @@
+import streamlit as st
 import requests
 import pandas as pd
+import os
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-API_KEY = "b8a45c0e4399cb242e0c6a486ca2542c"   # <-- PUT YOUR KEY HERE
+API_KEY = os.getenv("TMDB_API_KEY")
 BASE_URL = "https://api.themoviedb.org/3"
 
 # -----------------------------
@@ -94,3 +93,4 @@ for genre in GENRE_SECTIONS:
         print("No movies found.")
     else:
         print(result.to_string(index=False))
+
