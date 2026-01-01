@@ -3,94 +3,93 @@ import requests
 import pandas as pd
 import os
 
+# -------------------------------------------------
+# BASIC STREAMLIT CHECK (prevents black screen)
+# -------------------------------------------------
+st.set_page_config(page_title="Movie Recommendation App", layout="wide")
+st.title("🎬 Movie Recommendation System")
+st.write("genre-based movie recommendations")
+
+# -------------------------------------------------
+# API CONFIG (SECURE)
+# -------------------------------------------------
 API_KEY = os.getenv("TMDB_API_KEY")
 BASE_URL = "https://api.themoviedb.org/3"
 
-# -----------------------------
-# Fetch genre mapping safely
-# -----------------------------
-def fetch_genres():
-    try:
-        response = requests.get(
-            f"{BASE_URL}/genre/movie/list",
-            params={"api_key": API_KEY},
-            timeout=10
-        )
-        response.raise_for_status()
-        data = response.json()
-        return {g["id"]: g["name"] for g in data["genres"]}
-    except requests.exceptions.RequestException as e:
-        print("❌ Error fetching genres:", e)
-        return {}
+if not API_KEY:
+    st.error("❌ TMDB API key not found. Please set it in Streamlit Secrets.")
+    st.stop()
 
-genre_map = fetch_genres()
+# -------------------------------------------------
+# GENRE NAME → TMDB GENRE ID
+# -------------------------------------------------
+GENRE_ID_MAP = {
+    "Action": 28,
+    "Comedy": 35,
+    "Drama": 18,
+    "Romance": 10749,
+    "Horror": 27,
+    "Science Fiction": 878,
+    "Animation": 16,
+    "Thriller": 53
+}
 
-# -----------------------------
-# Fetch popular movies safely
-# -----------------------------
-def fetch_movies(pages=1):   # keep pages=1 for stability
+# -------------------------------------------------
+# FETCH MOVIES BY GENRE (SAFE)
+# -------------------------------------------------
+def fetch_movies_by_genre(genre_id, pages=2):
     movies = []
+
     for page in range(1, pages + 1):
         try:
             response = requests.get(
-                f"{BASE_URL}/movie/popular",
-                params={"api_key": API_KEY, "page": page},
+                f"{BASE_URL}/discover/movie",
+                params={
+                    "api_key": API_KEY,
+                    "with_genres": genre_id,
+                    "page": page,
+                    "sort_by": "popularity.desc"
+                },
                 timeout=10
             )
             response.raise_for_status()
-            movies.extend(response.json()["results"])
-        except requests.exceptions.RequestException as e:
-            print("❌ Network error while fetching movies:", e)
+
+            for m in response.json().get("results", []):
+                movies.append({
+                    "title": m.get("title", "N/A"),
+                    "overview": m.get("overview", ""),
+                    "popularity": m.get("popularity", 0),
+                    "release_date": m.get("release_date", "N/A")
+                })
+
+        except Exception as e:
+            st.warning("⚠️ Network issue while fetching movies. Showing available data.")
             break
-    return movies
 
-movies = pd.DataFrame(fetch_movies())
+    return pd.DataFrame(movies)
 
-if movies.empty:
-    print("❌ No movies fetched. Check internet or API key.")
-    exit()
+# -------------------------------------------------
+# UI: GENRE SELECTION
+# -------------------------------------------------
+selected_genre = st.selectbox(
+    "Select a Genre",
+    list(GENRE_ID_MAP.keys())
+)
 
-# -----------------------------
-# Convert genre IDs to names
-# -----------------------------
-def get_genre_names(ids):
-    return [genre_map.get(i, "") for i in ids]
+st.write(f"Showing movies for: **{selected_genre}**")
 
-movies["genres"] = movies["genre_ids"].apply(get_genre_names)
+# -------------------------------------------------
+# FETCH & DISPLAY MOVIES
+# -------------------------------------------------
+movies_df = fetch_movies_by_genre(GENRE_ID_MAP[selected_genre], pages=2)
 
-# -----------------------------
-# Genre-based recommendation
-# -----------------------------
-def recommend_by_genre(genre_name, top_n=8):
-    genre_name = genre_name.lower()
-    filtered = movies[movies["genres"].apply(
-        lambda g: genre_name in [x.lower() for x in g]
-    )]
-    return filtered.sort_values(
-        "popularity", ascending=False
-    )["title"].head(top_n)
+if movies_df.empty:
+    st.info("No movies found for this genre.")
+else:
+    movies_df = movies_df.sort_values("popularity", ascending=False)
 
-# -----------------------------
-# Netflix-style genre rows
-# -----------------------------
-GENRE_SECTIONS = [
-    "Action",
-    "Comedy",
-    "Drama",
-    "Romance",
-    "Horror",
-    "Science Fiction",
-    "Thriller",
-    "Animation"
-]
-
-print("\n🎬 NETFLIX STYLE MOVIE RECOMMENDATIONS\n")
-
-for genre in GENRE_SECTIONS:
-    print(f"\n--- {genre} Movies ---")
-    result = recommend_by_genre(genre)
-    if result.empty:
-        print("No movies found.")
-    else:
-        print(result.to_string(index=False))
-
+    for _, row in movies_df.iterrows():
+        st.markdown(f"### 🎥 {row['title']}")
+        st.write(f"📅 Release Date: {row['release_date']}")
+        st.write(row["overview"])
+        st.divider()
