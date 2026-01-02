@@ -1,95 +1,79 @@
 import streamlit as st
 import requests
-import pandas as pd
 import os
 
 # -------------------------------------------------
-# BASIC STREAMLIT CHECK (prevents black screen)
+# BASIC PAGE SETUP
 # -------------------------------------------------
-st.set_page_config(page_title="Movie Recommendation App", layout="wide")
-st.title("🎬 Movie Recommendation System")
-st.write("genre-based movie recommendations")
+st.set_page_config(page_title="OTT Content Explorer", layout="wide")
+st.title("🎬 OTT Content Explorer")
+st.write("Movies • TV Shows • All Languages • One Place")
 
 # -------------------------------------------------
-# API CONFIG (SECURE)
+# TMDB API CONFIG (SECURE)
 # -------------------------------------------------
 API_KEY = os.getenv("TMDB_API_KEY")
 BASE_URL = "https://api.themoviedb.org/3"
 
 if not API_KEY:
-    st.error("❌ TMDB API key not found. Please set it in Streamlit Secrets.")
+    st.error("TMDB API key not found. Please add it in Streamlit Secrets.")
     st.stop()
 
 # -------------------------------------------------
-# GENRE NAME → TMDB GENRE ID
+# FUNCTIONS
 # -------------------------------------------------
-GENRE_ID_MAP = {
-    "Action": 28,
-    "Comedy": 35,
-    "Drama": 18,
-    "Romance": 10749,
-    "Horror": 27,
-    "Science Fiction": 878,
-    "Animation": 16,
-    "Thriller": 53
-}
 
-# -------------------------------------------------
-# FETCH MOVIES BY GENRE (SAFE)
-# -------------------------------------------------
-def fetch_movies_by_genre(genre_id, pages=2):
-    movies = []
+# Fetch trending movies + TV shows
+def fetch_trending():
+    url = f"{BASE_URL}/trending/all/week"
+    params = {"api_key": API_KEY}
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    return response.json().get("results", [])
 
-    for page in range(1, pages + 1):
-        try:
-            response = requests.get(
-                f"{BASE_URL}/discover/movie",
-                params={
-                    "api_key": API_KEY,
-                    "with_genres": genre_id,
-                    "page": page,
-                    "sort_by": "popularity.desc"
-                },
-                timeout=10
-            )
-            response.raise_for_status()
+# Search movies + TV shows (all languages)
+def search_content(query):
+    url = f"{BASE_URL}/search/multi"
+    params = {
+        "api_key": API_KEY,
+        "query": query
+    }
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    return response.json().get("results", [])
 
-            for m in response.json().get("results", []):
-                movies.append({
-                    "title": m.get("title", "N/A"),
-                    "overview": m.get("overview", ""),
-                    "popularity": m.get("popularity", 0),
-                    "release_date": m.get("release_date", "N/A")
-                })
+# Display content neatly (text-only, simple)
+def display_content(items):
+    if not items:
+        st.info("No results found.")
+        return
 
-        except Exception as e:
-            st.warning("⚠️ Network issue while fetching movies. Showing available data.")
-            break
+    for item in items:
+        title = item.get("title") or item.get("name")
+        media_type = item.get("media_type", "").upper()
+        language = item.get("original_language", "N/A")
+        rating = item.get("vote_average", "N/A")
+        overview = item.get("overview", "")
 
-    return pd.DataFrame(movies)
+        st.markdown(f"### 🎥 {title}")
+        st.write(f"**Type:** {media_type} | **Language:** {language} | ⭐ {rating}")
+        st.write(overview)
+        st.divider()
 
 # -------------------------------------------------
-# UI: GENRE SELECTION
+# UI LOGIC
 # -------------------------------------------------
-selected_genre = st.selectbox(
-    "Select a Genre",
-    list(GENRE_ID_MAP.keys())
+
+search_query = st.text_input(
+    "🔍 Search movies or TV shows (any language)",
+    placeholder="Type a movie or TV show name..."
 )
 
-st.write(f"Showing movies for: **{selected_genre}**")
-
-# -------------------------------------------------
-# FETCH & DISPLAY MOVIES
-# -------------------------------------------------
-movies_df = fetch_movies_by_genre(GENRE_ID_MAP[selected_genre], pages=2)
-
-if movies_df.empty:
-    st.info("No movies found for this genre.")
+if search_query:
+    st.subheader(f"Search Results for: {search_query}")
+    results = search_content(search_query)
+    display_content(results)
 else:
-    movies_df = movies_df.sort_values("popularity", ascending=False)
-
-    for _, row in movies_df.iterrows():
-        st.markdown(f"### 🎥 {row['title']}")
-        st.write(f"📅 Release Date: {row['release_date']}")
-        st.write(row["overview"])
-        st.divider()
+    st.subheader("🔥 Trending Now")
+    trending_items = fetch_trending()
+    display_content(trending_items)
